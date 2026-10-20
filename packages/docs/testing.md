@@ -17,6 +17,6 @@ One easy accessibility aspect to keep in mind when dealing with foreground text 
 
 ## Unit tests
 
-Unit tests are written via Jest. See [Tests Readme](../tests/README.md) for more details about how the Unit tests are organized.
+Unit tests are written via Jest. See [Tests Readme](../server/test) for more details about how the Unit tests are organized.
 
 In the ideal world business logic within frontend Components (eg .tsx files) would be separated from the UI components themselves, for separation of concerns and easier focus of unit testing each part.

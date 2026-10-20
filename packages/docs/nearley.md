@@ -144,8 +144,8 @@ git commit -m "Add rarity filter support"
 Filter parsing is tested in:
 
 ```
-packages/tests/cards/filtering.test.ts
-packages/tests/cards/filterOperations.test.ts
+packages/server/test/cards/filtering.test.ts
+packages/server/test/cards/filterOperations.test.ts
 ```
 
 ### Manual Testing
