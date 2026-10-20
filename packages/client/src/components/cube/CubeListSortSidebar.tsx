@@ -1,4 +1,4 @@
-import React, { useContext, useMemo } from 'react';
+import React, { useCallback, useContext, useMemo } from 'react';
 
 import { QuestionIcon } from '@primer/octicons-react';
 import { CUBE_DEFAULT_SORTS, getAllSorts, ORDERED_SORTS } from '@utils/sorting/Sort';
@@ -16,6 +16,7 @@ import withModal from 'components/WithModal';
 import CubeContext from 'contexts/CubeContext';
 import DisplayContext from 'contexts/DisplayContext';
 import RotoDraftContext from 'contexts/RotoDraftContext';
+import useAlerts, { Alerts } from 'hooks/UseAlerts';
 
 const TagColorsModalButton = withModal(Button, TagColorsModal);
 const RotoSetupButton = withModal(Button, RotisserieDraftModal);
@@ -47,6 +48,8 @@ const CubeListSortSidebar: React.FC<CubeListSortSidebarProps> = ({ canEdit, isHo
     setRightSidebarMode: _setRightSidebarMode,
     showInlineTagEmojis,
     toggleShowInlineTagEmojis,
+    showTagQuickFilters,
+    toggleShowTagQuickFilters,
     showAllBoards,
     setShowAllBoards,
     useBaseCardData,
@@ -64,6 +67,14 @@ const CubeListSortSidebar: React.FC<CubeListSortSidebarProps> = ({ canEdit, isHo
   }, [sortPrimary, effectiveDefaultSorts, sortSecondary, sortTertiary, sortQuaternary]);
 
   const allSorts = useMemo(() => getAllSorts(cube), [cube]);
+
+  const { alerts, addAlert, dismissAlerts } = useAlerts();
+  const handleSaveSorts = useCallback(async () => {
+    dismissAlerts();
+    if (!(await saveSorts())) {
+      addAlert('danger', "Couldn't save the default sort. Please make sure you're logged in and try again.");
+    }
+  }, [saveSorts, addAlert, dismissAlerts]);
 
   return (
     <>
@@ -104,8 +115,9 @@ const CubeListSortSidebar: React.FC<CubeListSortSidebarProps> = ({ canEdit, isHo
           </Text>
 
           <Flexbox direction="col" gap="2">
+            <Alerts alerts={alerts} />
             {canEdit && (
-              <Button color="primary" onClick={saveSorts} disabled={!sortsModified} block>
+              <Button color="primary" onClick={handleSaveSorts} disabled={!sortsModified} block>
                 Save as Default Sort
               </Button>
             )}
@@ -152,6 +164,16 @@ const CubeListSortSidebar: React.FC<CubeListSortSidebarProps> = ({ canEdit, isHo
                 setChecked={toggleShowInlineTagEmojis}
               />
               <Tooltip text="Display emoji tags directly next to card names in the list view.">
+                <QuestionIcon size={16} className="hidden md:inline" />
+              </Tooltip>
+            </Flexbox>
+            <Flexbox direction="row" gap="2" alignItems="center">
+              <Checkbox
+                label="Show Tag Quick Filters"
+                checked={showTagQuickFilters}
+                setChecked={toggleShowTagQuickFilters}
+              />
+              <Tooltip text="Show a row of buttons for this cube's emoji tags below the filter bar. Clicking one filters to that tag.">
                 <QuestionIcon size={16} className="hidden md:inline" />
               </Tooltip>
             </Flexbox>
@@ -252,6 +274,16 @@ const CubeListSortSidebar: React.FC<CubeListSortSidebarProps> = ({ canEdit, isHo
                 </Tooltip>
               </Flexbox>
               <Flexbox direction="row" gap="2" alignItems="center">
+                <Checkbox
+                  label="Show Tag Quick Filters"
+                  checked={showTagQuickFilters}
+                  setChecked={toggleShowTagQuickFilters}
+                />
+                <Tooltip text="Show a row of buttons for this cube's emoji tags below the filter bar. Clicking one filters to that tag.">
+                  <QuestionIcon size={16} />
+                </Tooltip>
+              </Flexbox>
+              <Flexbox direction="row" gap="2" alignItems="center">
                 <Checkbox label="Show All Boards" checked={showAllBoards} setChecked={setShowAllBoards} />
                 <Tooltip text="Display all boards at the same time, regardless of the current view's board selection.">
                   <QuestionIcon size={16} />
@@ -270,8 +302,9 @@ const CubeListSortSidebar: React.FC<CubeListSortSidebarProps> = ({ canEdit, isHo
               <Text semibold sm>
                 Actions
               </Text>
+              <Alerts alerts={alerts} />
               {canEdit && (
-                <Button color="primary" onClick={saveSorts} disabled={!sortsModified} block>
+                <Button color="primary" onClick={handleSaveSorts} disabled={!sortsModified} block>
                   Save as Default Sort
                 </Button>
               )}

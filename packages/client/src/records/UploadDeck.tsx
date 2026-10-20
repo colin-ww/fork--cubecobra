@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { detailsToCard } from '@utils/cardutil';
 import { CardDetails } from '@utils/datatypes/Card';
@@ -15,6 +15,7 @@ import Select from 'components/base/Select';
 import Text from 'components/base/Text';
 import TextArea from 'components/base/TextArea';
 import CardGrid from 'components/card/CardGrid';
+import BasicsModal from 'components/modals/BasicsModal';
 import AutocardContext from 'contexts/AutocardContext';
 import { CSRFContext } from 'contexts/CSRFContext';
 import { cardNameMatches, cubeCardNameMatches } from 'utils/cardAutocomplete';
@@ -29,6 +30,10 @@ interface UploadDeckProps {
   // Optional: when provided, an inline "+ Add new player" option is offered.
   newPlayerName?: string;
   setNewPlayerName?: (name: string) => void;
+  // Optional: when provided, picking an existing player offers a field to correct
+  // their name (or swap it for an @account handle).
+  renamePlayer?: string;
+  setRenamePlayer?: (name: string) => void;
   record: Record;
   mainboardCards: CardDetails[];
   setMainboardCards: React.Dispatch<React.SetStateAction<CardDetails[]>>;
@@ -43,6 +48,8 @@ const UploadDeck: React.FC<UploadDeckProps> = ({
   setSelectedUser,
   newPlayerName,
   setNewPlayerName,
+  renamePlayer,
+  setRenamePlayer,
   record,
   mainboardCards,
   setMainboardCards,
@@ -61,6 +68,73 @@ const UploadDeck: React.FC<UploadDeckProps> = ({
   const [parseErrors, setParseErrors] = useState<string[]>([]);
   const [isParsing, setIsParsing] = useState<boolean>(false);
   const [showPasteForm, setShowPasteForm] = useState<boolean>(false);
+  // The cube's basic lands, fed to the same Add Basic Lands modal the deckbuilder
+  // uses. They live on their own board, so they're absent from the cube autocomplete
+  // and tedious to type a mana base out of.
+  const [basicDetails, setBasicDetails] = useState<CardDetails[]>([]);
+  const [basicsOpen, setBasicsOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const poolResponse = await csrfFetch(`/cube/api/cubecardpool/${cubeId}`, { method: 'GET' });
+        const pool = await poolResponse.json();
+        const basics: { cardID: string; name: string }[] = pool?.success === 'true' ? (pool.basics ?? []) : [];
+        if (cancelled || basics.length === 0) {
+          return;
+        }
+
+        // One request for every basic's details — the modal needs images, and the
+        // resolved details are what get appended to the deck.
+        const detailsResponse = await csrfFetch('/cube/api/getdetailsforcards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cards: basics.map((basic) => basic.cardID) }),
+        });
+        const json = await detailsResponse.json();
+        if (!cancelled && json?.success === 'true') {
+          setBasicDetails((json.details ?? []).filter(Boolean));
+        }
+      } catch {
+        // Adding basics is a convenience — the rest of the editor works without it.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [csrfFetch, cubeId]);
+
+  // The modal addresses cards by index, so hand it one array: the current deck
+  // followed by the basics. `deck` is what its Calculate button reads to suggest a
+  // mana base.
+  const basicsModalCards = useMemo(
+    () => [...mainboardCards, ...basicDetails].map(detailsToCard),
+    [mainboardCards, basicDetails],
+  );
+  const basicsModalDeck = useMemo(() => mainboardCards.map((_, index) => index), [mainboardCards]);
+  const basicsModalBasics = useMemo(
+    () => basicDetails.map((_, index) => mainboardCards.length + index),
+    [basicDetails, mainboardCards.length],
+  );
+
+  // counts[i] copies of basicDetails[i], in the modal's own order.
+  const handleAddBasics = useCallback(
+    (counts: number[]) => {
+      const cardsToAdd = basicDetails.flatMap((details, index) =>
+        Array.from({ length: counts[index] ?? 0 }, () => details),
+      );
+      if (cardsToAdd.length === 0) {
+        return;
+      }
+      if (addToSideboard) {
+        setSideboardCards((prevCards) => [...prevCards, ...cardsToAdd]);
+      } else {
+        setMainboardCards((prevCards) => [...prevCards, ...cardsToAdd]);
+      }
+    },
+    [basicDetails, addToSideboard, setMainboardCards, setSideboardCards],
+  );
 
   const handleAdd = useCallback(
     async (event: React.FormEvent, match: string) => {
@@ -151,6 +225,8 @@ const UploadDeck: React.FC<UploadDeckProps> = ({
         setValue={(value) => {
           const userId = parseInt(value, 10);
           setSelectedUser(userId);
+          const player = record.players[userId - 1];
+          setRenamePlayer?.(player ? (player.userId ? `@${player.name}` : player.name) : '');
         }}
         label="Upload deck for player"
         options={[
@@ -168,6 +244,16 @@ const UploadDeck: React.FC<UploadDeckProps> = ({
           value={newPlayerName ?? ''}
           onChange={(e) => setNewPlayerName(e.target.value)}
           placeholder="New player name"
+          autoComplete="off"
+        />
+      )}
+      {selectedUser > 0 && setRenamePlayer && (
+        <Input
+          type="text"
+          label="Name on this record (fix a misspelling, or use @username to link your account)"
+          value={renamePlayer ?? ''}
+          onChange={(e) => setRenamePlayer(e.target.value)}
+          placeholder="Player name"
           autoComplete="off"
         />
       )}
@@ -197,6 +283,23 @@ const UploadDeck: React.FC<UploadDeckProps> = ({
         <Button color="primary" disabled={cardNameValue.length === 0} onClick={(e) => handleAdd(e, cardNameValue)}>
           <span className="text-nowrap">Add Cards</span>
         </Button>
+        {basicDetails.length > 0 && (
+          <>
+            <Button color="accent" onClick={() => setBasicsOpen(true)}>
+              <span className="text-nowrap">Add Basic Lands</span>
+            </Button>
+            {/* Rendered only once the basics have loaded: the modal seeds its per-land
+                counts from this list on mount. */}
+            <BasicsModal
+              isOpen={basicsOpen}
+              setOpen={setBasicsOpen}
+              addBasics={handleAddBasics}
+              deck={basicsModalDeck}
+              basics={basicsModalBasics}
+              cards={basicsModalCards}
+            />
+          </>
+        )}
       </Flexbox>
       <Button color="accent" onClick={() => setShowPasteForm(!showPasteForm)} block className="mt-2">
         {showPasteForm ? 'Hide' : 'Show'} Paste Decklist

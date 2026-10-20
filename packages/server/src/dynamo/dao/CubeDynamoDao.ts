@@ -76,6 +76,7 @@ import CubeAnalytic from '@utils/datatypes/CubeAnalytic';
 import User from '@utils/datatypes/User';
 import { normalizeDraftFormatSteps } from '@utils/draftutil';
 import { hostedImageToImageData } from '@utils/hostedImagesUtil';
+import { PrimerTab, primerTabsFromLegacy } from '@utils/primerTabs';
 import { cardFromId, getPlaceholderCard } from 'serverutils/carddb';
 import cloudwatch from 'serverutils/cloudwatch';
 import { getImageData } from 'serverutils/imageutil';
@@ -106,7 +107,9 @@ export interface UnhydratedCube {
   tagColors: any[];
   defaultFormat: number;
   numDecks: number;
-  description: string;
+  primerTabs?: PrimerTab[];
+  /** @deprecated legacy single-string primer */
+  description?: string;
   brief?: string;
   imageName: string;
   // Lotus Cobra perk: uploaded custom cube image. See utils Cube.ts for semantics.
@@ -149,6 +152,12 @@ interface QueryResult {
   items: Cube[];
   lastKey?: Record<string, any>;
 }
+
+/** Replaces a stored legacy `description` with `primerTabs`, so no hydrated cube carries `description`. */
+const withPrimerTabs = ({ description, ...rest }: UnhydratedCube) => ({
+  ...rest,
+  primerTabs: rest.primerTabs ?? primerTabsFromLegacy(description),
+});
 
 /**
  * Resolves the cube's display image. Prefers an uploaded custom image (Lotus Cobra perk) when set,
@@ -264,7 +273,9 @@ export class CubeDynamoDao extends BaseDynamoDao<Cube, UnhydratedCube> {
       tagColors: item.tagColors,
       defaultFormat: item.defaultFormat,
       numDecks: item.numDecks,
-      description: item.description,
+      primerTabs: item.primerTabs,
+      // Cubes that never got primerTabs keep their stored description rather than losing it.
+      description: item.primerTabs ? undefined : (item as any).description,
       brief: item.brief,
       imageName: item.imageName,
       imgHostedImageId: item.imgHostedImageId,
@@ -339,7 +350,7 @@ export class CubeDynamoDao extends BaseDynamoDao<Cube, UnhydratedCube> {
       }
 
       return {
-        ...item,
+        ...withPrimerTabs(item),
         owner: deletedUser,
         collaborators: item.collaborators ?? [],
         image,
@@ -382,7 +393,7 @@ export class CubeDynamoDao extends BaseDynamoDao<Cube, UnhydratedCube> {
       }
 
       return {
-        ...item,
+        ...withPrimerTabs(item),
         owner: deletedUser,
         collaborators: item.collaborators ?? [],
         image,
@@ -424,7 +435,7 @@ export class CubeDynamoDao extends BaseDynamoDao<Cube, UnhydratedCube> {
     }
 
     return {
-      ...item,
+      ...withPrimerTabs(item),
       owner: owner,
       collaborators: item.collaborators ?? [],
       image,
@@ -479,7 +490,7 @@ export class CubeDynamoDao extends BaseDynamoDao<Cube, UnhydratedCube> {
       }
 
       return {
-        ...item,
+        ...withPrimerTabs(item),
         owner: finalOwner,
         image,
       } as Cube;
@@ -496,7 +507,7 @@ export class CubeDynamoDao extends BaseDynamoDao<Cube, UnhydratedCube> {
       }
 
       return {
-        ...item,
+        ...withPrimerTabs(item),
         owner: deletedUser,
         image,
       } as Cube;
@@ -1298,20 +1309,31 @@ export class CubeDynamoDao extends BaseDynamoDao<Cube, UnhydratedCube> {
 
   /**
    * Calculates cube categories based on card legalities.
-   * This mirrors the logic in setCubeType from cubefn.ts
+   *
+   * Kept in sync with getCubeTypes in serverutils/cubefn, which cannot be reused
+   * here: cubefn imports serverutils/util, which imports dynamo/daos, closing an
+   * import cycle back onto this file.
    */
   private calculateCategoriesFromCards(cards: CubeCards): string[] {
     const FORMATS = ['Vintage', 'Legacy', 'Modern', 'Pioneer', 'Standard'];
+    const VINTAGE = 0;
+
+    // Restricted cards are playable (one copy); banned cards are not.
+    const isPlayable = (details: any, format: string) =>
+      details.legalities[format] === 'legal' || details.legalities[format] === 'restricted';
 
     let pauper = true;
     let peasant = false;
-    let type = FORMATS.length - 1;
+    // Every format is evaluated independently because legality does not nest:
+    // Deathrite Shaman is playable in Pioneer yet banned in the wider Modern.
+    // Vintage is never checked, so it remains the catch-all floor.
+    const eligible = FORMATS.map(() => true);
 
     for (const card of cards.mainboard) {
       const cardDetails = cardFromId(card.cardID);
 
       // Check pauper legality
-      if (pauper && cardDetails.legalities.Pauper !== 'legal' && cardDetails.legalities.Pauper !== 'banned') {
+      if (pauper && !isPlayable(cardDetails, 'Pauper')) {
         pauper = false;
         peasant = true;
       }
@@ -1321,24 +1343,25 @@ export class CubeDynamoDao extends BaseDynamoDao<Cube, UnhydratedCube> {
         peasant = false;
       }
 
-      // Find most restrictive legal format
-      while (type > 0) {
-        const legality = FORMATS[type];
-        if (legality && cardDetails.legalities[legality] !== 'legal' && cardDetails.legalities[legality] !== 'banned') {
-          type -= 1;
-        } else {
-          break;
+      FORMATS.forEach((format, index) => {
+        if (index !== VINTAGE && eligible[index] && !isPlayable(cardDetails, format)) {
+          eligible[index] = false;
         }
-      }
+      });
     }
 
     const categories: string[] = [];
 
-    // Add base format
-    const baseFormat = FORMATS[type];
-    if (baseFormat) {
-      categories.push(baseFormat);
+    // FORMATS runs least to most restrictive, so the last eligible entry is the
+    // tightest format the whole cube fits in.
+    let baseFormat = FORMATS[VINTAGE] as string;
+    for (let index = FORMATS.length - 1; index >= 0; index -= 1) {
+      if (eligible[index]) {
+        baseFormat = FORMATS[index] as string;
+        break;
+      }
     }
+    categories.push(baseFormat);
 
     // Add modifiers
     if (pauper) {

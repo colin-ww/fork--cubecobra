@@ -48,6 +48,7 @@ interface CubeCobraStackParams {
   gaMeasurementId: string;
   gaApiSecret: string;
   draftmancerApiKey: string;
+  manaMatrixApiKey: string;
   stripeSecretKey: string;
   stripePublicKey: string;
   enableBotSecurity: boolean;
@@ -371,6 +372,7 @@ function createEnvironmentVariables(
     GA_MEASUREMENT_ID: params.gaMeasurementId,
     GA_API_SECRET: params.gaApiSecret,
     DRAFTMANCER_API_KEY: params.draftmancerApiKey,
+    MANAMATRIX_API_KEY: params.manaMatrixApiKey,
     STRIPE_SECRET_KEY: params.stripeSecretKey,
     STRIPE_PUBLIC_KEY: params.stripePublicKey,
     ENABLE_BOT_SECURITY: params.enableBotSecurity ? 'true' : 'false',
@@ -425,7 +427,12 @@ function createLambdaEnvironmentVariables(
     // beta/local — exports write to the shared cubecobra-public bucket, which the
     // beta jobs role has no access to, so they must not run outside production.
     STAGE: params.environmentName === 'production' ? 'PROD' : params.environmentName === 'beta' ? 'BETA' : 'LOCAL',
+    // Jobs that need the card catalog (ManaMatrix rotation) or the ML service
+    // (P1P1 bot picks) call back into THIS stage's server. Without it the jobs
+    // fall back to https://cubecobra.com, so beta would drive production.
+    API_BASE_URL: params.domain === 'localhost' ? 'http://localhost:8080' : `https://${params.domain}`,
     DRAFTMANCER_API_KEY: params.draftmancerApiKey,
+    MANAMATRIX_API_KEY: params.manaMatrixApiKey,
     ENABLE_BOT_SECURITY: params.enableBotSecurity ? 'true' : 'false',
     MAINTAIN_CUBE_CARD_HASHES: params.maintainCubeCardHashes ? 'true' : 'false',
   };

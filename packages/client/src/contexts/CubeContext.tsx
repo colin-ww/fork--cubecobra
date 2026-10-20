@@ -20,7 +20,7 @@ import Card, {
   CubeCardRemove,
 } from '@utils/datatypes/Card';
 import { CardDetails } from '@utils/datatypes/Card';
-import Cube, { CubeCards, getViewByName, getViewDefinitions, TagColor } from '@utils/datatypes/Cube';
+import Cube, { CubeCards, findViewBySlug, getViewDefinitions, TagColor, viewNameToSlug } from '@utils/datatypes/Cube';
 import { UserRoles } from '@utils/datatypes/User';
 import { getCubeSorts } from '@utils/sorting/Sort';
 import { deepCopy, isCubeOwner } from '@utils/Util';
@@ -104,7 +104,7 @@ export interface CubeContextValue {
   cardsLoading: boolean;
   setShowUnsorted: (value: boolean) => Promise<void>;
   setCollapseDuplicateCards: (value: boolean) => Promise<void>;
-  saveSorts: () => Promise<void>;
+  saveSorts: () => Promise<boolean>;
   resetSorts: () => void;
   effectiveDefaultSorts: string[];
   sortPrimary: string | null;
@@ -329,7 +329,7 @@ export function CubeContextProvider({
   }, [cube.cards, setValidationCards]);
 
   const defaultSorts = useMemo(() => {
-    const currentView = getViewByName(cube, activeView);
+    const currentView = findViewBySlug(cube, activeView);
     if (currentView?.defaultSorts && currentView.defaultSorts.length === 4) {
       return currentView.defaultSorts;
     }
@@ -478,7 +478,7 @@ export function CubeContextProvider({
 
   // Effective default sorts for the current view (falls back to cube defaults)
   const effectiveDefaultSorts = useMemo(() => {
-    const currentView = getViewByName(cube, activeView);
+    const currentView = findViewBySlug(cube, activeView);
     if (currentView?.defaultSorts && currentView.defaultSorts.length === 4) {
       return currentView.defaultSorts;
     }
@@ -514,7 +514,7 @@ export function CubeContextProvider({
       return;
     }
 
-    const prevView = getViewByName(cubeRef.current, prevActiveViewForSortsRef.current);
+    const prevView = findViewBySlug(cubeRef.current, prevActiveViewForSortsRef.current);
     const prevDefaults = prevView?.defaultSorts?.length === 4 ? prevView.defaultSorts : getCubeSorts(cubeRef.current);
 
     const sortsMatchPrevDefaults =
@@ -523,7 +523,7 @@ export function CubeContextProvider({
       sortTertiaryRef.current === prevDefaults[2] &&
       sortQuaternaryRef.current === prevDefaults[3];
 
-    const newView = getViewByName(cubeRef.current, activeView);
+    const newView = findViewBySlug(cubeRef.current, activeView);
 
     if (sortsMatchPrevDefaults && newView?.defaultSorts?.length === 4) {
       setSortPrimary(newView.defaultSorts[0]);
@@ -1574,25 +1574,43 @@ export function CubeContextProvider({
 
     // Persist into the active view's defaultSorts (views are the new home for
     // per-view sort defaults). Falls back to writing the whole derived view
-    // list if cube.views isn't materialized yet.
+    // list if cube.views isn't materialized yet. activeView is a slug, so match
+    // on slugs — comparing against the display name misses any multi-word or
+    // punctuated view name and silently saves the sorts nowhere.
+    const activeViewSlug = viewNameToSlug(activeView);
     const allViews = getViewDefinitions(cube);
     const updatedViews = allViews.map((view) =>
-      view.name.toLowerCase() === activeView.toLowerCase() ? { ...view, defaultSorts: currentSorts } : view,
+      viewNameToSlug(view.name) === activeViewSlug ? { ...view, defaultSorts: currentSorts } : view,
     );
 
     setLoading(true);
+    const previousCube = cube;
     setCube({
       ...cube,
       views: updatedViews,
     });
-    await csrfFetch(`/cube/updateviews/${cube.id}`, {
-      method: 'POST',
-      body: JSON.stringify({ views: updatedViews }),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+
+    let saved = false;
+    try {
+      const response = await csrfFetch(`/cube/updateviews/${cube.id}`, {
+        method: 'POST',
+        body: JSON.stringify({ views: updatedViews }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      // An expired session redirects to the login page, which is a 200 with an HTML body.
+      const json = await response.json().catch(() => null);
+      saved = response.ok && json?.success === true;
+    } catch {
+      saved = false;
+    }
+
+    if (!saved) {
+      setCube(previousCube);
+    }
     setLoading(false);
+    return saved;
   }, [sortPrimary, defaultSorts, sortSecondary, sortTertiary, sortQuaternary, cube, activeView, csrfFetch]);
 
   const resetSorts = useCallback(() => {

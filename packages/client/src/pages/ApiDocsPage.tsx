@@ -58,6 +58,8 @@ interface TocEntry {
 const tocSections: TocEntry[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'cube-json', label: 'Cube JSON Export' },
+  { id: 'cube-history', label: 'Cube History' },
+  { id: 'record-files', label: 'Draft Record Files' },
   { id: 'cube-downloads', label: 'Cube File Downloads' },
   { id: 'deck-downloads', label: 'Deck File Downloads' },
   { id: 'draft-bots', label: 'Draft Bots & ML' },
@@ -257,7 +259,7 @@ const ApiDocsPage: React.FC = () => (
             method="GET"
             path="/cube/api/cubeJSON/:id"
             returnType="CubeJSON"
-            description="Returns the full cube object including all boards (mainboard, maybeboard, etc.) with every card&#39;s complete details (name, colors, type, CMC, image URLs, tags, and more)."
+            description="Returns the full cube object including all boards (mainboard, maybeboard, etc.) with every card&#39;s complete details (name, colors, type, CMC, image URLs, tags, and more). The ordered `primerTabs` array (first tab is the primary tab) replaced the former `description` field."
             cors
             rateLimit="100 req/min"
             responseFormat="application/json"
@@ -271,13 +273,17 @@ const ApiDocsPage: React.FC = () => (
                   or before this date. Response includes a <InlineCode>changelog</InlineCode> field with the resolved
                   changelog ID and date.
                 </Param>
+                <Param name="changelog" type="query">
+                  Changelog ID. Returns the cube as it was immediately after that changelog. Takes precedence over{' '}
+                  <InlineCode>date</InlineCode>. Returns 404 if the changelog does not belong to this cube.
+                </Param>
               </>
             }
             responseExample={`{
   "name": "My Vintage Cube",
   "shortId": "myvintagecube",
   "owner": "username",
-  "description": "A powered vintage cube.",
+  "primerTabs": [{ "title": "Primer", "content": "A powered vintage cube." }],
   "image_uri": "https://...",
   "cards": {
     "mainboard": [
@@ -305,8 +311,8 @@ const ApiDocsPage: React.FC = () => (
               <Text sm className="text-text-secondary">
                 Cards are sorted by the default sort (Color Category → Types-Multicolor → Mana Value → Alphabetical).
                 All boards are always returned regardless of cube visibility settings. The{' '}
-                <InlineCode>changelog</InlineCode> field is only present when the <InlineCode>date</InlineCode> query
-                parameter is used.
+                <InlineCode>changelog</InlineCode> field is only present when the <InlineCode>date</InlineCode> or{' '}
+                <InlineCode>changelog</InlineCode> query parameter is used.
               </Text>
             }
           />
@@ -327,6 +333,10 @@ const ApiDocsPage: React.FC = () => (
                   Unix timestamp in milliseconds. When provided, returns card names from the cube at the nearest
                   changelog at or before this date.
                 </Param>
+                <Param name="changelog" type="query">
+                  Changelog ID. Returns card names from the cube as it was immediately after that changelog. Takes
+                  precedence over <InlineCode>date</InlineCode>.
+                </Param>
               </>
             }
             responseExample={`Black Lotus
@@ -334,6 +344,165 @@ Ancestral Recall
 Time Walk
 Mox Sapphire
 ...`}
+          />
+        </Flexbox>
+      </CollapsibleSection>
+
+      {/* ─── Cube History ───────────────────────────────────────── */}
+      <CollapsibleSection id="cube-history" title="Cube History">
+        <Flexbox direction="col" gap="4">
+          <Text md className="text-text-secondary">
+            Every change to a cube&#39;s card list is recorded as a changelog entry. List a cube&#39;s entries, fetch
+            the changes in a single entry, or pass an entry ID as the <InlineCode>changelog</InlineCode> parameter to{' '}
+            <InlineCode>/cube/api/cubeJSON/:id</InlineCode> to get the whole cube at that point in time.
+          </Text>
+
+          <Endpoint
+            method="GET"
+            path="/cube/api/history/:id"
+            returnType="CubeHistory"
+            description="Lists a cube&#39;s changelog entries, newest first."
+            cors
+            rateLimit="100 req/min"
+            responseFormat="application/json"
+            params={
+              <>
+                <Param name=":id" type="path" required>
+                  Cube UUID or short ID
+                </Param>
+                <Param name="limit" type="query">
+                  Entries per page. Defaults to 50, maximum 100.
+                </Param>
+                <Param name="cursor" type="query">
+                  The <InlineCode>nextCursor</InlineCode> value from a previous response, to fetch the next page.
+                </Param>
+              </>
+            }
+            responseExample={`{
+  "cubeId": "5f2b...",
+  "changelogs": [
+    { "id": "abc123", "date": 1710460800000, "cubeVersion": 42 },
+    ...
+  ],
+  "nextCursor": "eyJpZCI6..."
+}`}
+            notes={
+              <Text sm className="text-text-secondary">
+                Keep requesting pages until <InlineCode>nextCursor</InlineCode> is absent; the final page may be empty.{' '}
+                <InlineCode>cubeVersion</InlineCode> may be missing on older entries.
+              </Text>
+            }
+          />
+
+          <Endpoint
+            method="GET"
+            path="/cube/api/changelog/:id/:changelogId"
+            returnType="Changelog"
+            description="Returns the changes recorded in a single changelog entry, grouped by board."
+            cors
+            rateLimit="100 req/min"
+            responseFormat="application/json"
+            params={
+              <>
+                <Param name=":id" type="path" required>
+                  Cube UUID or short ID
+                </Param>
+                <Param name=":changelogId" type="path" required>
+                  Changelog ID from <InlineCode>/cube/api/history/:id</InlineCode>
+                </Param>
+              </>
+            }
+            responseExample={`{
+  "id": "abc123",
+  "cubeId": "5f2b...",
+  "date": 1710460800000,
+  "cubeVersion": 42,
+  "changes": {
+    "mainboard": {
+      "adds": [ { "cardID": "...", "details": { "name": "Black Lotus", ... } } ],
+      "removes": [ { "index": 12, "oldCard": { ... } } ],
+      "swaps": [ { "index": 3, "card": { ... }, "oldCard": { ... } } ],
+      "edits": [ { "index": 7, "newCard": { ... }, "oldCard": { ... } } ]
+    }
+  }
+}`}
+          />
+        </Flexbox>
+      </CollapsibleSection>
+
+      {/* ─── Draft Record Files ────────────────────────────────── */}
+      <CollapsibleSection id="record-files" title="Draft Record Files">
+        <Flexbox direction="col" gap="4">
+          <Text md className="text-text-secondary">
+            A cube&#39;s draft records can be downloaded as a JSON file and imported into any cube you can edit, from
+            the Records tab. Other tools can create or edit these files too: anything in this format can be imported.
+            Importing always adds new records, so importing the same file twice creates duplicates.
+          </Text>
+
+          <Endpoint
+            method="GET"
+            path="/cube/records/export/:id"
+            returnType="RecordsFile"
+            description="Downloads every record for a cube, oldest first, with each player&#39;s deck."
+            responseFormat="application/json"
+            params={
+              <>
+                <Param name=":id" type="path" required>
+                  Cube UUID or short ID
+                </Param>
+                <Param name="record" type="query">
+                  A record ID, to download just that record.
+                </Param>
+              </>
+            }
+            responseExample={`{
+  "format": "cubecobra-records",
+  "version": 1,
+  "exportedAt": "2026-10-17T18:30:00.000Z",
+  "source": { "cubeId": "5f2b...", "cubeName": "My Cube" },
+  "records": [
+    {
+      "id": "8c1d...",
+      "name": "Friday Draft",
+      "date": 1760000000000,
+      "description": "",
+      "players": [
+        { "name": "Andy", "userId": "61a0..." },
+        { "name": "Sam" }
+      ],
+      "rounds": [
+        { "matches": [ { "p1": "Andy", "p2": "Sam", "results": [2, 1, 0] } ] }
+      ],
+      "trophy": ["Andy"],
+      "decks": {
+        "Andy": {
+          "mainboard": [ { "name": "Lightning Bolt", "oracleId": "4457ed35-..." } ],
+          "sideboard": []
+        }
+      }
+    }
+  ]
+}`}
+            notes={
+              <Flexbox direction="col" gap="1">
+                <Text sm className="text-text-secondary">
+                  Players are referred to by <InlineCode>name</InlineCode> everywhere: in matches, trophies, and as the
+                  keys of <InlineCode>decks</InlineCode>, so names must be unique within a record.{' '}
+                  <InlineCode>userId</InlineCode> links a player to their Cube Cobra account and is optional.
+                </Text>
+                <Text sm className="text-text-secondary">
+                  <InlineCode>date</InlineCode> is milliseconds since the Unix epoch. Each match&#39;s{' '}
+                  <InlineCode>results</InlineCode> is <InlineCode>[p1 wins, p2 wins, draws]</InlineCode> in games. The
+                  optional <InlineCode>overrides</InlineCode> maps a player name to{' '}
+                  <InlineCode>{'{ wins, losses, draws }'}</InlineCode> for records entered without match results.
+                </Text>
+                <Text sm className="text-text-secondary">
+                  A deck card is <InlineCode>{'{ "name", "oracleId" }'}</InlineCode> or just a card name as a string. On
+                  import, a known <InlineCode>oracleId</InlineCode> wins; otherwise the card is found by name. Cards
+                  that can&#39;t be found are skipped and reported. Only decks are included, not draft pick order.
+                </Text>
+              </Flexbox>
+            }
           />
         </Flexbox>
       </CollapsibleSection>
@@ -848,6 +1017,8 @@ Time Walk`}
           <ul className="list-disc list-inside space-y-1 text-text-secondary ml-4 text-sm">
             <li>
               CORS-enabled endpoints (<InlineCode>/cube/api/cubeJSON/:id</InlineCode>,{' '}
+              <InlineCode>/cube/api/history/:id</InlineCode>,{' '}
+              <InlineCode>/cube/api/changelog/:id/:changelogId</InlineCode>,{' '}
               <InlineCode>/public/cube/history/:id</InlineCode>) are rate limited to{' '}
               <span className="font-semibold">100 requests per minute</span> per IP address.
             </li>

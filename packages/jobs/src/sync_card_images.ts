@@ -14,6 +14,12 @@
 // The one-time snapshot import was dated 2026-06-29, which seeds the watermark
 // on first run. Scryfall permits backend image downloads (only frontend
 // hotlinking is going away), which is exactly what this job does.
+//
+// Backfill: set CARD_IMAGE_SYNC_SINCE (ISO 8601) to re-sync everything updated
+// after that time regardless of the stored watermark, e.g. to repair images copied
+// before the cache-buster fix (#3038, 2026-10-02) — those runs fetched unversioned
+// URLs and could pick up a stale render from Scryfall's CDN (typically the
+// foreign-language spoiler image). The stored watermark never moves backwards.
 import dotenv from 'dotenv';
 import sharp from 'sharp';
 
@@ -29,10 +35,10 @@ const SYNC_STATE_KEY = 'cardimages/_sync-state.json';
 const DEFAULT_WATERMARK = '2026-06-29T00:00:00Z';
 const WEBP_QUALITY = 80;
 const CONCURRENCY = 16;
-// Long-lived cache to match the static assets (1 year). Card images can change
-// in place when Scryfall re-renders art, so a re-render won't reach clients who
-// already cached it until this expires — acceptable since re-renders are rare and
-// cosmetic. For instant propagation you'd move to versioned URLs (see notes).
+// Long-lived cache to match the static assets (1 year). Objects are overwritten in
+// place when Scryfall re-renders an image, so the catalog's URLs carry the image
+// version as `?v=` (update_cards) — a re-render gets a new URL rather than relying
+// on this cache ever expiring.
 const IMAGE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const IMAGE_HEADERS = { 'User-Agent': SCRYFALL_HEADERS['User-Agent'] };
 
@@ -92,14 +98,17 @@ async function fetchImage(url: string): Promise<Buffer | null> {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function upsertCard(id: string): Promise<number> {
+async function upsertCard(entry: ManifestEntry): Promise<number> {
+  const { id } = entry;
   const a = id[0];
   const b = id[1];
+  // Scryfall's cache-buster is image_updated_at in Unix seconds; without it their CDN can serve a stale render.
+  const version = Math.floor(new Date(entry.image_updated_at!).getTime() / 1000);
   let written = 0;
   for (const face of ['front', 'back'] as const) {
     const suffix = face === 'back' ? '_back' : '';
     for (const v of VARIANTS) {
-      const src = `${CDN}/${v.cdnDir}/${face}/${a}/${b}/${id}.${v.ext}`;
+      const src = `${CDN}/${v.cdnDir}/${face}/${a}/${b}/${id}.${v.ext}?${version}`;
       let buf: Buffer | null;
       try {
         buf = await fetchImage(src);
@@ -138,10 +147,13 @@ export async function syncCardImages(): Promise<{ cardsUpserted: number; imagesU
     updatedAt: '',
     lastRunUpserted: 0,
   };
-  console.log(`Bucket ${R2_BUCKET}, watermark ${state.watermark}`);
+  const since = process.env.CARD_IMAGE_SYNC_SINCE;
+  if (since && Number.isNaN(new Date(since).getTime())) throw new Error(`Invalid CARD_IMAGE_SYNC_SINCE: ${since}`);
+  const scanFrom = since || state.watermark;
+  console.log(`Bucket ${R2_BUCKET}, watermark ${state.watermark}${since ? `, backfilling since ${since}` : ''}`);
 
   console.log('Scanning Scryfall manifest for image updates...');
-  const changed = await collectChanged(new Date(state.watermark).getTime());
+  const changed = await collectChanged(new Date(scanFrom).getTime());
   console.log(`${changed.length} cards with new images since watermark`);
 
   if (changed.length === 0) {
@@ -158,7 +170,7 @@ export async function syncCardImages(): Promise<{ cardsUpserted: number; imagesU
   let totalWritten = 0;
   let processed = 0;
   await runPool(changed, CONCURRENCY, async (entry) => {
-    totalWritten += await upsertCard(entry.id);
+    totalWritten += await upsertCard(entry);
     processed += 1;
     if (processed % 200 === 0) console.log(`  ${processed}/${changed.length} cards, ${totalWritten} files`);
   });

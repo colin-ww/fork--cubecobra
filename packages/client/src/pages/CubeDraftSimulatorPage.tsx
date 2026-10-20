@@ -44,7 +44,6 @@ import DynamicFlash from '../components/DynamicFlash';
 import RenderToRoot from '../components/RenderToRoot';
 import withAutocard from '../components/WithAutocard';
 import { CSRFContext } from '../contexts/CSRFContext';
-import { DisplayContextProvider } from '../contexts/DisplayContext';
 import useClusteringPipeline from '../hooks/useClusteringPipeline';
 import useDraftSimulatorFocus from '../hooks/useDraftSimulatorFocus';
 import useDraftSimulatorPresentation from '../hooks/useDraftSimulatorPresentation';
@@ -761,15 +760,15 @@ const CubeDraftSimulatorPage: React.FC<CubeDraftSimulatorPageProps> = ({ cube })
   });
 
   // Deck-based color profiles for each skeleton (same logic as ArchetypeSkeletonCard's useMemo)
+  // `deckBuilds`/`cardMeta` are read outside the memo so the callback closes over those values
+  // rather than over `displayRunData`, which the compiler would otherwise infer as the
+  // dependency and refuse to preserve the memoization.
+  const deckBuilds = displayRunData?.deckBuilds;
+  const cardMeta = displayRunData?.cardMeta;
   const skeletonColorProfiles = useMemo<Map<number, string>>(() => {
-    if (!displayRunData?.deckBuilds || skeletons.length === 0) return new Map();
-    return new Map(
-      skeletons.map((sk) => [
-        sk.clusterId,
-        computeSkeletonColorProfile(sk, displayRunData.deckBuilds, displayRunData.cardMeta),
-      ]),
-    );
-  }, [skeletons, displayRunData?.deckBuilds, displayRunData?.cardMeta]);
+    if (!deckBuilds || skeletons.length === 0) return new Map();
+    return new Map(skeletons.map((sk) => [sk.clusterId, computeSkeletonColorProfile(sk, deckBuilds, cardMeta)]));
+  }, [skeletons, deckBuilds, cardMeta]);
   const derivedData = useMemo<DraftSimulatorDerivedData>(
     () => ({
       displayRunData,
