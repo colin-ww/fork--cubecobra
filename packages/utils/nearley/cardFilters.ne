@@ -166,7 +166,7 @@ tagCondition -> ("tag"i | "tags"i) tagSetElementOpValue {% ([, valuePred]) => ge
 
 finishCondition -> ("fin"i | "finish"i) finishOpValue {% ([, valuePred]) => genericCondition('finish', cardFinish, valuePred) %}
 
-legalityCondition -> ("leg"i | "legal"i | "legality"i) equalityOperator legalityValue {% ([, op, legality]) => legalitySuperCondition(op, legality) %}
+legalityCondition -> ("f"i | "format"i | "leg"i | "legal"i | "legality"i) equalityOperator legalityValue {% ([, op, legality]) => legalitySuperCondition(op, legality) %}
 
 bannedCondition -> ("ban"i | "banned"i) legalityOpValue {% ([, valuePred]) => { const c = genericCondition('legality', cardBannedIn, valuePred); c.describe = `is banned in ${titleCase(valuePred.element || '')}`; return c; } %}
 
@@ -194,7 +194,7 @@ layoutCondition -> "layout"i  stringOpValue {% ([, valuePred]) => genericConditi
 
 eloCondition -> "elo"i integerOpValue {% ([, valuePred]) => genericCondition('elo', cardElo, valuePred) %}
 
-popularityCondition ->  ("pop"i | "popularity"i) integerOpValue {% ([, valuePred]) => genericCondition('popularity', cardPopularity, valuePred) %}
+popularityCondition ->  ("pop"i | "popularity"i) floatOpValue {% ([, valuePred]) => genericCondition('popularity', cardPopularity, valuePred) %}
 
 cubeCountCondition -> ("cubes"i | "cubecount"i | "numcubes"i) integerOpValue {% ([, valuePred]) => genericCondition('cubecount', cardCubeCount, valuePred) %}
 
@@ -223,9 +223,9 @@ gameCondition -> "game"i gameOpValue {% ([, valuePred]) => genericCondition('gam
 
 firstYearCondition -> ("year"i | "firstyear"i | "fy"i) integerOpValue {% ([, valuePred]) => genericCondition('firstPrintYear', cardFirstPrintYear, valuePred) %}
 
-keywordCondition -> ("kw"i | "keyword"i | "keywords"i) stringSetElementOpValue {% ([, valuePred]) => genericCondition('keywords', cardKeywords, valuePred) %}
+keywordCondition -> ("kw"i | "kws"i | "keyword"i | "keywords"i) stringSetElementOpValue {% ([, valuePred]) => genericCondition('keywords', cardKeywords, valuePred) %}
 
-otagCondition -> ("otag"i | "oracletag"i | "oracletags"i) tagSetElementOpValue {% ([, valuePred]) => genericCondition('otag', cardOracleTags, valuePred) %}
+otagCondition -> ("function"i | "otag"i | "oracletag"i | "oracletags"i) tagSetElementOpValue {% ([, valuePred]) => genericCondition('otag', cardOracleTags, valuePred) %}
 
 atagCondition -> ("atag"i | "arttag"i | "arttags"i | "illustrationtag"i) tagSetElementOpValue {% ([, valuePred]) => genericCondition('atag', cardArtTags, valuePred) %}
 
@@ -233,7 +233,7 @@ wordCountCondition -> ("words"i | "wc"i | "wordcount"i) integerOpValue {% ([, va
 
 # Quantity is stamped per-card by the cube list before filtering, so this filter
 # only meaningfully varies inside a cube; elsewhere every card reads as quantity=1.
-quantityCondition -> ("quantity"i | "count"i | "copies"i) integerOpValue {% ([, valuePred]) => genericCondition('quantity', cardQuantity, valuePred) %}
+quantityCondition -> ("qty"i | "quantity"i | "count"i | "copies"i) integerOpValue {% ([, valuePred]) => genericCondition('quantity', cardQuantity, valuePred) %}
 
 # board=mainboard, board=maybeboard, board=basics, or any custom-board key.
 # In non-cube contexts cardBoard() defaults to 'mainboard' so board=mainboard
