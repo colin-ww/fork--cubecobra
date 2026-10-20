@@ -7,6 +7,9 @@ import { ChangelogDynamoDao } from './dao/ChangelogDynamoDao';
 import { CollaboratorIndexDynamoDao } from './dao/CollaboratorIndexDynamoDao';
 import { ComboDynamoDao } from './dao/ComboDynamoDao';
 import { CommentDynamoDao } from './dao/CommentDynamoDao';
+import { CrosswordPuzzleDynamoDao } from './dao/CrosswordPuzzleDynamoDao';
+import { CrosswordSubmissionDynamoDao } from './dao/CrosswordSubmissionDynamoDao';
+import { CrosswordUserStatsDynamoDao } from './dao/CrosswordUserStatsDynamoDao';
 import { CubeDynamoDao } from './dao/CubeDynamoDao';
 import { DailyP1P1DynamoDao } from './dao/DailyP1P1DynamoDao';
 import { DraftDynamoDao } from './dao/DraftDynamoDao';
@@ -15,6 +18,10 @@ import { ExportTaskDynamoDao } from './dao/ExportTaskDynamoDao';
 import { FeaturedQueueDynamoDao } from './dao/FeaturedQueueDynamoDao';
 import { FeedDynamoDao } from './dao/FeedDynamoDao';
 import { HostedImageDynamoDao } from './dao/HostedImageDynamoDao';
+import { ManaMatrixCellStatsDynamoDao } from './dao/ManaMatrixCellStatsDynamoDao';
+import { ManaMatrixPuzzleDynamoDao } from './dao/ManaMatrixPuzzleDynamoDao';
+import { ManaMatrixSubmissionDynamoDao } from './dao/ManaMatrixSubmissionDynamoDao';
+import { ManaMatrixUserStatsDynamoDao } from './dao/ManaMatrixUserStatsDynamoDao';
 import { MigrationTaskDynamoDao } from './dao/MigrationTaskDynamoDao';
 import { NoticeDynamoDao } from './dao/NoticeDynamoDao';
 import { NotificationDynamoDao } from './dao/NotificationDynamoDao';
@@ -24,6 +31,9 @@ import { PasswordResetDynamoDao } from './dao/PasswordResetDynamoDao';
 import { PatronDynamoDao } from './dao/PatronDynamoDao';
 import { PodcastDynamoDao } from './dao/PodcastDynamoDao';
 import { RecordDynamoDao } from './dao/RecordDynamoDao';
+import { SynergyConnectPuzzleDynamoDao } from './dao/SynergyConnectPuzzleDynamoDao';
+import { SynergyConnectSubmissionDynamoDao } from './dao/SynergyConnectSubmissionDynamoDao';
+import { SynergyConnectUserStatsDynamoDao } from './dao/SynergyConnectUserStatsDynamoDao';
 import { UserDynamoDao } from './dao/UserDynamoDao';
 import { VideoDynamoDao } from './dao/VideoDynamoDao';
 import documentClient from './documentClient';
@@ -50,6 +60,40 @@ export const cubeDao: CubeDynamoDao = new CubeDynamoDao(documentClient, userDao,
 export const blogDao: BlogDynamoDao = new BlogDynamoDao(documentClient, changelogDao, cubeDao, userDao, tableName);
 export const cardHistoryDao: CardHistoryDynamoDao = new CardHistoryDynamoDao(documentClient, tableName);
 export const dailyP1P1Dao: DailyP1P1DynamoDao = new DailyP1P1DynamoDao(documentClient, tableName);
+export const manaMatrixPuzzleDao: ManaMatrixPuzzleDynamoDao = new ManaMatrixPuzzleDynamoDao(documentClient, tableName);
+export const manaMatrixSubmissionDao: ManaMatrixSubmissionDynamoDao = new ManaMatrixSubmissionDynamoDao(
+  documentClient,
+  tableName,
+);
+export const manaMatrixUserStatsDao: ManaMatrixUserStatsDynamoDao = new ManaMatrixUserStatsDynamoDao(
+  documentClient,
+  tableName,
+);
+export const manaMatrixCellStatsDao: ManaMatrixCellStatsDynamoDao = new ManaMatrixCellStatsDynamoDao(
+  documentClient,
+  tableName,
+);
+export const synergyConnectPuzzleDao: SynergyConnectPuzzleDynamoDao = new SynergyConnectPuzzleDynamoDao(
+  documentClient,
+  tableName,
+);
+export const synergyConnectSubmissionDao: SynergyConnectSubmissionDynamoDao = new SynergyConnectSubmissionDynamoDao(
+  documentClient,
+  tableName,
+);
+export const synergyConnectUserStatsDao: SynergyConnectUserStatsDynamoDao = new SynergyConnectUserStatsDynamoDao(
+  documentClient,
+  tableName,
+);
+export const crosswordPuzzleDao: CrosswordPuzzleDynamoDao = new CrosswordPuzzleDynamoDao(documentClient, tableName);
+export const crosswordSubmissionDao: CrosswordSubmissionDynamoDao = new CrosswordSubmissionDynamoDao(
+  documentClient,
+  tableName,
+);
+export const crosswordUserStatsDao: CrosswordUserStatsDynamoDao = new CrosswordUserStatsDynamoDao(
+  documentClient,
+  tableName,
+);
 export const featuredQueueDao: FeaturedQueueDynamoDao = new FeaturedQueueDynamoDao(documentClient, tableName);
 export const packageDao: PackageDynamoDao = new PackageDynamoDao(documentClient, userDao, tableName);
 export const draftDao: DraftDynamoDao = new DraftDynamoDao(documentClient, cubeDao, userDao, tableName);

@@ -1,10 +1,16 @@
+import { rotateCrossword } from './jobs/rotateCrossword';
 import { rotateP1P1 } from './jobs/rotateDailyP1P1';
 import { rotateQueue } from './jobs/rotateFeaturedQueue';
+import { rotateManaMatrix } from './jobs/rotateManaMatrix';
+import { rotateSynergyConnect } from './jobs/rotateSynergyConnect';
 import { syncPodcasts } from './jobs/syncPodcasts';
 
 const DAILY_JOBS = [
   { name: 'syncPodcasts', fn: syncPodcasts },
   { name: 'rotateDailyP1P1', fn: rotateP1P1 },
+  { name: 'rotateManaMatrix', fn: rotateManaMatrix },
+  { name: 'rotateSynergyConnect', fn: rotateSynergyConnect },
+  { name: 'rotateCrossword', fn: rotateCrossword },
 ];
 
 const WEEKLY_JOBS = [{ name: 'rotateFeaturedQueue', fn: rotateQueue }];

@@ -69,7 +69,11 @@ const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
   const cache = useRef<Map<string, string[]>>(new Map());
   // Held in a ref so a fresh getMatches identity each parent render doesn't
   // restart the debounce timer (callers pass inline fetcher factories).
+  // react/refs flags the render-phase write below. This is the "latest ref" idiom: the value
+  // is only ever read from the debounced fetch, long after render, so moving the assignment
+  // into an effect would add a frame of staleness for no benefit.
   const getMatchesRef = useRef(getMatches);
+  // eslint-disable-next-line react/refs
   getMatchesRef.current = getMatches;
 
   // Clear cache when the fetcher changes (e.g., toggling filter options).
@@ -160,20 +164,47 @@ const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
   const hasQuery = visible && !!value && normalizedValue.length >= MIN_QUERY_LENGTH;
   const showDropdown = hasQuery && (loading || showMatches);
 
+  // How many rows the arrow keys can land on: the suggestions actually rendered.
+  // While a lookup is in flight the list is a single spinner row, so there is
+  // nothing to highlight even though `matches` still holds the previous results.
+  const highlightableCount = showMatches && !loading ? matches.length : 0;
+
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       const enterPressed = event.keyCode === 13;
+      // Walks the rendered suggestions, wrapping at both ends. The bound used to
+      // be a hardcoded 9 — three short of the twelve /tool/api/cardnames returns
+      // by default — so arrowing down stopped on the third-to-last row and the
+      // last two suggestions were keyboard-unreachable. Deriving it from the
+      // rendered list means the two can't disagree again, whatever the endpoint's
+      // page size or a caller's fetcher returns.
+      const moveHighlight = (delta: number) =>
+        setPosition((position) => {
+          const last = highlightableCount - 1;
+          if (last < 0) {
+            return -1;
+          }
+          const next = position + delta;
+          if (next < 0) {
+            return last;
+          }
+          return next > last ? 0 : next;
+        });
+
       if (event.keyCode === 40) {
         // DOWN key
         event.preventDefault();
-        setPosition((p) => (p < 9 ? p + 1 : p));
+        moveHighlight(1);
       } else if (event.keyCode === 38) {
         // UP key
         event.preventDefault();
-        setPosition((p) => (p > -1 ? p - 1 : p));
+        moveHighlight(-1);
       } else if (event.keyCode === 9 || enterPressed) {
         // TAB or ENTER key
-        if (showMatches) {
+        // While a lookup is in flight, `matches` still holds the PREVIOUS query's
+        // results (hidden behind the spinner) — accepting them would commit a
+        // suggestion the user never saw. Ignore accept keys until it resolves.
+        if (showMatches && !loading) {
           const goodPosition = position >= 0 && position < matches.length ? position : 0;
           const match = matches[goodPosition];
           acceptSuggestion(match);
@@ -190,7 +221,7 @@ const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
         }
       }
     },
-    [position, acceptSuggestion, matches, showMatches, onSubmit, normalizedValue],
+    [position, acceptSuggestion, matches, showMatches, loading, onSubmit, normalizedValue, highlightableCount],
   );
 
   // Portal mode: keep the fixed-positioned dropdown glued under the input while

@@ -13,10 +13,15 @@ import {
   PersonIcon,
   QuestionIcon,
   SearchIcon,
+  ShareAndroidIcon,
   SignInIcon,
   StackIcon,
   StarIcon,
+  TableIcon,
   ToolsIcon,
+  TypographyIcon,
+  VersionsIcon,
+  ListOrderedIcon,
 } from '@primer/octicons-react';
 import { cdnUrl } from '@utils/cdnUrl';
 import Notification from '@utils/datatypes/Notification';
@@ -77,11 +82,17 @@ const exploreSections: NavSection[] = [
       { label: 'Top Cards', href: '/tool/searchcards?v=rows', icon: GraphIcon },
       { label: 'Search Cards', href: '/tool/searchcards', icon: SearchIcon },
       { label: 'Sets', href: '/tool/sets', icon: StackIcon },
+      { label: 'Packages', href: '/packages', icon: VersionsIcon },
     ],
   },
   {
-    header: 'Packages',
-    items: [{ label: 'Packages', href: '/packages', icon: PackageIcon }],
+    header: 'Dailies',
+    items: [
+      { label: 'Mana Matrix', href: '/tool/manamatrix', icon: TableIcon },
+      { label: 'Synergy Connect', href: '/tool/synergyconnect', icon: ShareAndroidIcon },
+      { label: 'Crossword', href: '/tool/crossword', icon: TypographyIcon },
+      { label: 'Daily P1P1', href: '/tool/p1p1/daily', icon: ListOrderedIcon },
+    ],
   },
 ];
 

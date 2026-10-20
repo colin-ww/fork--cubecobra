@@ -1,6 +1,6 @@
 import { cardOracleId } from '@utils/cardutil';
 import CardType from '@utils/datatypes/Card';
-import CubeType from '@utils/datatypes/Cube';
+import CubeType, { CubeCards } from '@utils/datatypes/Cube';
 import DraftType, { DRAFT_TYPES } from '@utils/datatypes/Draft';
 import { setupPicks } from '@utils/draftutil';
 import { Draft } from 'dynamo/dao/DraftDynamoDao';
@@ -10,7 +10,7 @@ import Joi from 'joi';
 import { bodyValidation } from 'router/middleware';
 import { csrfProtection, ensureAuth } from 'router/middleware';
 import { cardFromId, getReasonableCardByOracle, getVersionsByOracleId } from 'serverutils/carddb';
-import { addBasics, createPool, getBasicsFromCube } from 'serverutils/cube';
+import { addBasics, createPool, getBasicCardsFromCube } from 'serverutils/cube';
 import { isCubeEditable, isCubeViewable } from 'serverutils/cubefn';
 import { handleRouteError, redirect, render } from 'serverutils/render';
 
@@ -146,7 +146,7 @@ export const associateNewDraft = async (
   }
 
   // Get basics from the "Basics" board or fall back to legacy cube.basics
-  const basicsToAdd = getBasicsFromCube(cubeCards, 'Basics', cube.basics);
+  const basicsToAdd = getBasicCardsFromCube(cubeCards, 'Basics', cube.basics);
 
   // addBasics modifies the draft object in place, adding basic cards to cards array
   // and setting basics to be an array of card indices
@@ -235,18 +235,16 @@ export const associateWithExistingDraft = async (
 
 // Build a single draft with EVERY player's deck placed at once, then create it in
 // one draftDao.createDraft call. This mirrors the regular draft workflow: that one
-// createDraft pass names every seat from its mainboard archetype (assessColors).
-//
-// Why one batched create instead of associateNewDraft + N associateWithExistingDraft:
-// draftDao.update() SKIPS seat-name recomputation whenever seats[0].title is set,
-// so the incremental approach only ever named the first seat. Creating all seats up
-// front (no per-seat title) lets createDraft name them all — the proven path.
+// createDraft pass names every seat from its mainboard archetype (assessColors),
+// in a single draft write rather than one per player.
 export const associateDecksWithNewDraft = async (
   cube: CubeType,
   record: RecordEntity,
   decksByIndex: { [userIndex: number]: { mainboard: string[]; sideboard?: string[] } },
+  // Pass the cube's cards when attaching decks to many records, to load them once.
+  preloadedCubeCards?: CubeCards,
 ) => {
-  const cubeCards = await cubeDao.getCards(cube.id);
+  const cubeCards = preloadedCubeCards ?? (await cubeDao.getCards(cube.id));
   const { mainboard: cubeMainboard } = cubeCards;
   const cards: CardType[] = [];
 
@@ -323,7 +321,7 @@ export const associateDecksWithNewDraft = async (
     basics: [] as number[], // populated by addBasics
   };
 
-  const basicsToAdd = getBasicsFromCube(cubeCards, 'Basics', cube.basics);
+  const basicsToAdd = getBasicCardsFromCube(cubeCards, 'Basics', cube.basics);
   addBasics(newDraft, basicsToAdd);
 
   const id = await draftDao.createDraft(newDraft);

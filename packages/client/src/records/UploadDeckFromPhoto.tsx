@@ -29,6 +29,10 @@ interface UploadDeckFromPhotoProps {
   setAlerts: React.Dispatch<React.SetStateAction<UncontrolledAlertProps[]>>;
   // Append-to-mainboard mode (single file upload), used by the deck-upload page.
   setMainboardCards?: React.Dispatch<React.SetStateAction<CardDetails[]>>;
+  // When provided, each reviewed card can be sent to the sideboard instead. Without
+  // it there's nowhere for a sideboard to go, so the per-card control is hidden and
+  // everything lands in the mainboard.
+  setSideboardCards?: React.Dispatch<React.SetStateAction<CardDetails[]>>;
   // Deck mode (Hedron): preset photos to cycle through + a callback reporting the
   // current decklist (card names) and whether this (pool) photo should be turned
   // into a deck by the deckbuilder on submit. The review list IS the deck.
@@ -53,6 +57,7 @@ interface ScanRow {
   quad?: [number, number][]; // detector's oriented box (absent for manually-added cards)
   bbox?: Bbox; // axis-aligned bounds of `quad`, for the hover/spotlight overlay
   alternatives?: string[]; // close runner-up cube cards, offered as chips on low-confidence rows
+  sideboard?: boolean; // send this card to the sideboard rather than the mainboard
 }
 
 type Status = 'idle' | 'preview' | 'working' | 'review';
@@ -162,6 +167,7 @@ const OrientedCrop: React.FC<{
 const UploadDeckFromPhoto: React.FC<UploadDeckFromPhotoProps> = ({
   cube,
   setMainboardCards,
+  setSideboardCards,
   setAlerts,
   photos,
   onCardsChange,
@@ -174,8 +180,10 @@ const UploadDeckFromPhoto: React.FC<UploadDeckFromPhotoProps> = ({
   const imageElRef = useRef<HTMLImageElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  // The rotated source canvas the OCR ran on; kept so we can crop/re-OCR regions.
-  const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  // The rotated source canvas the OCR ran on; kept so we can crop/re-OCR regions. Held in
+  // state, not a ref, because the row crops read it while rendering - as a ref it only
+  // happened to display because an adjacent setState forced the re-render.
+  const [scanCanvas, setScanCanvas] = useState<HTMLCanvasElement | null>(null);
   // Persistent single-line worker reused for per-box re-OCR.
   const ocrWorkerRef = useRef<any>(null);
 
@@ -257,7 +265,7 @@ const UploadDeckFromPhoto: React.FC<UploadDeckFromPhotoProps> = ({
   const reset = useCallback(() => {
     resetImage();
     terminateWorker();
-    scanCanvasRef.current = null;
+    setScanCanvas(null);
     setRows([]);
     setScanSrc(null);
     setScanDims(null);
@@ -394,7 +402,10 @@ const UploadDeckFromPhoto: React.FC<UploadDeckFromPhotoProps> = ({
   // Deck mode: report the current decklist (named cards) and whether this pool
   // should be auto-built on submit, to the parent whenever either changes. Held
   // in a ref so an unmemoized callback can't loop.
+  // react/refs flags the render-phase write. This is the "latest ref" idiom and the ref is
+  // only read from the effect below, which runs after this assignment.
   const onCardsChangeRef = useRef(onCardsChange);
+  // eslint-disable-next-line react/refs
   onCardsChangeRef.current = onCardsChange;
   const wantsAutoBuild = autoBuildPool && currentPhoto?.type === 'pool';
   useEffect(() => {
@@ -413,7 +424,7 @@ const UploadDeckFromPhoto: React.FC<UploadDeckFromPhotoProps> = ({
     }
 
     const canvas = makeRotatedCanvas(img, rotation, SCAN_MAX_EDGE);
-    scanCanvasRef.current = canvas;
+    setScanCanvas(canvas);
     setScanSrc(canvas.toDataURL('image/jpeg', 0.92));
     setScanDims({ w: canvas.width, h: canvas.height });
     setStatus('working');
@@ -488,17 +499,36 @@ const UploadDeckFromPhoto: React.FC<UploadDeckFromPhotoProps> = ({
       const resolved = await Promise.all(
         named.map(async (row) => ({ row, card: await getCard(csrfFetch, cube.defaultPrinting, row.name.trim()) })),
       );
-      const cards = resolved.map((r) => r.card).filter((card): card is CardDetails => card !== null);
       const failedIds = new Set(resolved.filter((r) => !r.card).map((r) => r.row.id));
 
-      if (cards.length > 0) {
-        setMainboardCards?.((prev) => [...prev, ...cards]);
+      // With no sideboard sink, a row's flag is ignored rather than dropping the card.
+      const isSideboard = (row: ScanRow) => !!setSideboardCards && !!row.sideboard;
+      const resolvedFor = (sideboard: boolean) =>
+        resolved
+          .filter((r) => r.card && isSideboard(r.row) === sideboard)
+          .map((r) => r.card)
+          .filter((card): card is CardDetails => card !== null);
+      const mainboardToAdd = resolvedFor(false);
+      const sideboardToAdd = resolvedFor(true);
+      const addedCount = mainboardToAdd.length + sideboardToAdd.length;
+
+      if (mainboardToAdd.length > 0) {
+        setMainboardCards?.((prev) => [...prev, ...mainboardToAdd]);
+      }
+      if (sideboardToAdd.length > 0) {
+        setSideboardCards?.((prev) => [...prev, ...sideboardToAdd]);
       }
 
       if (failedIds.size === 0) {
         setAlerts((prev) => [
           ...prev,
-          { color: 'success', message: `Added ${cards.length} card(s) to the mainboard.` },
+          {
+            color: 'success',
+            message:
+              sideboardToAdd.length > 0
+                ? `Added ${mainboardToAdd.length} card(s) to the mainboard and ${sideboardToAdd.length} to the sideboard.`
+                : `Added ${mainboardToAdd.length} card(s) to the mainboard.`,
+          },
         ]);
         reset();
       } else {
@@ -510,16 +540,17 @@ const UploadDeckFromPhoto: React.FC<UploadDeckFromPhotoProps> = ({
           ...prev,
           {
             color: 'warning',
-            message: `Added ${cards.length} card(s). ${failedIds.size} couldn't be resolved — fix or remove them below.`,
+            message: `Added ${addedCount} card(s). ${failedIds.size} couldn't be resolved — fix or remove them below.`,
           },
         ]);
       }
     } finally {
       setAdding(false);
     }
-  }, [rows, csrfFetch, cube.defaultPrinting, setMainboardCards, setAlerts, reset]);
+  }, [rows, csrfFetch, cube.defaultPrinting, setMainboardCards, setSideboardCards, setAlerts, reset]);
 
   const addableCount = rows.filter((row) => row.name.trim()).length;
+  const sideboardCount = setSideboardCards ? rows.filter((row) => row.name.trim() && row.sideboard).length : 0;
 
   // Spotlight overlay for the hovered slice: four dark panels cover the whole
   // image EXCEPT the hovered box, leaving it bright with a thick ring. Built from
@@ -759,7 +790,7 @@ const UploadDeckFromPhoto: React.FC<UploadDeckFromPhotoProps> = ({
                       {/* The name-bar pixels the OCR read (absent for manually-added cards). */}
                       {row.quad ? (
                         <OrientedCrop
-                          source={scanCanvasRef.current}
+                          source={scanCanvas}
                           quad={row.quad}
                           targetH={28}
                           className="h-7 w-auto max-w-full block rounded bg-white border border-border shrink-0"
@@ -796,6 +827,20 @@ const UploadDeckFromPhoto: React.FC<UploadDeckFromPhotoProps> = ({
                           >
                             not in cube
                           </span>
+                        )}
+                        {setSideboardCards && (
+                          <label
+                            className="flex items-center gap-1 shrink-0 hover:cursor-pointer"
+                            title={`Put ${row.name || 'this card'} in the sideboard`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="form-checkbox h-4 w-4 text-primary-button"
+                              checked={!!row.sideboard}
+                              onChange={(event) => updateRow(row.id, { sideboard: event.target.checked })}
+                            />
+                            <span className="text-xs text-text-secondary">SB</span>
+                          </label>
                         )}
                         <Button color="danger" onClick={() => removeRow(row.id)}>
                           <span className="text-nowrap">✕</span>
@@ -836,7 +881,11 @@ const UploadDeckFromPhoto: React.FC<UploadDeckFromPhotoProps> = ({
           ) : (
             <Flexbox direction="row" gap="2">
               <Button color="primary" block disabled={addableCount === 0 || adding} onClick={addToDeck}>
-                {adding ? 'Adding…' : `Add ${addableCount} card(s) to mainboard`}
+                {adding
+                  ? 'Adding…'
+                  : sideboardCount > 0
+                    ? `Add ${addableCount - sideboardCount} to mainboard, ${sideboardCount} to sideboard`
+                    : `Add ${addableCount} card(s) to mainboard`}
               </Button>
               <Button color="secondary" onClick={reset} disabled={adding}>
                 <span className="text-nowrap">Discard</span>

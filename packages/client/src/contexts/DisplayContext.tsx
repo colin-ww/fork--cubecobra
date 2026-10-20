@@ -1,5 +1,7 @@
 import React, { ReactNode, useCallback, useEffect, useState } from 'react';
 
+import { viewNameToSlug } from '@utils/datatypes/Cube';
+
 import { NumCols } from '../components/base/Layout';
 import useLocalStorage from '../hooks/useLocalStorage';
 import useQueryParam from '../hooks/useQueryParam';
@@ -14,11 +16,13 @@ export interface DisplayContextValue {
   showMaybeboard: boolean;
   activeBoard: string; // Deprecated - use activeView instead
   setActiveBoard: (board: string) => void; // Deprecated - use setActiveView instead
-  activeView: string; // The currently active view (by name)
+  activeView: string; // The currently active view, as its URL slug
   setActiveView: (view: string) => void;
   showInlineTagEmojis: boolean;
   toggleShowMaybeboard: () => void;
   toggleShowInlineTagEmojis: () => void;
+  showTagQuickFilters: boolean;
+  toggleShowTagQuickFilters: () => void;
   openCollapse: string | null;
   setOpenCollapse: React.Dispatch<React.SetStateAction<string | null>>;
   cardsPerRow: NumCols;
@@ -44,12 +48,14 @@ const DisplayContext = React.createContext<DisplayContextValue>({
   showMaybeboard: false,
   activeBoard: 'mainboard',
   setActiveBoard: () => {},
-  activeView: 'Mainboard',
+  activeView: 'mainboard',
   setActiveView: () => {},
   showInlineTagEmojis: false,
   toggleShowCustomImages: () => {},
   toggleShowMaybeboard: () => {},
   toggleShowInlineTagEmojis: () => {},
+  showTagQuickFilters: true,
+  toggleShowTagQuickFilters: () => {},
   openCollapse: null,
   setOpenCollapse: () => {},
   cardsPerRow: 8,
@@ -72,7 +78,11 @@ const DisplayContext = React.createContext<DisplayContextValue>({
 
 interface DisplayContextProviderProps {
   cubeID: string;
-  defaultView?: string;
+  /**
+   * URL slugs of the cube's views, in display order. The first is the default view,
+   * and a `view` param outside this list is treated as unresolvable.
+   */
+  viewSlugs?: string[];
   /**
    * When true, the right sidebar defaults to 'edit' on desktop. Used by the
    * cube list page so owners always see the edit panel expanded on desktop.
@@ -83,7 +93,7 @@ interface DisplayContextProviderProps {
 
 export const DisplayContextProvider: React.FC<DisplayContextProviderProps> = ({
   cubeID,
-  defaultView,
+  viewSlugs,
   defaultEditSidebarOpen = false,
   ...props
 }) => {
@@ -103,19 +113,33 @@ export const DisplayContextProvider: React.FC<DisplayContextProviderProps> = ({
     setShowCustomImages((prev) => !prev);
   }, [setShowCustomImages]);
 
-  // View-based navigation (new system)
-  const [viewParam, setViewParam] = useQueryParam('view', defaultView || 'Mainboard');
-  const [activeView, setActiveViewState] = useState<string>(viewParam);
+  // View-based navigation. The `view` query param is the single source of truth and
+  // carries the view's slug; activeView is derived from it rather than mirrored into
+  // state, so the URL and the active view can never disagree.
+  const defaultViewSlug = viewSlugs?.[0] || 'mainboard';
+  const [viewParam, setViewParam] = useQueryParam('view', defaultViewSlug);
 
-  // Sync activeView with URL parameter
+  // Slugify on read so links predating slug navigation (which carried the display
+  // name, e.g. "?view=Base Packs") still land on the right view.
+  const requestedViewSlug = viewNameToSlug(viewParam);
+  const isKnownView = !viewSlugs || viewSlugs.length === 0 || viewSlugs.includes(requestedViewSlug);
+  const activeView = isKnownView && requestedViewSlug ? requestedViewSlug : defaultViewSlug;
+
+  // A param naming no existing view (a typo, a renamed view, a stale double-encoded
+  // link) falls back to the default view. Drop it with a history *replace* first:
+  // letting setViewParam push would put the broken URL one Back press away, and
+  // re-clearing it on return would trap the button.
   useEffect(() => {
-    setActiveViewState(viewParam);
-  }, [viewParam]);
+    if (isKnownView) {
+      return;
+    }
+    Query.del('view');
+    setViewParam(defaultViewSlug);
+  }, [isKnownView, defaultViewSlug, setViewParam]);
 
   const setActiveView = useCallback(
     (view: string) => {
-      setActiveViewState(view);
-      setViewParam(view);
+      setViewParam(viewNameToSlug(view));
     },
     [setViewParam],
   );
@@ -164,6 +188,11 @@ export const DisplayContextProvider: React.FC<DisplayContextProviderProps> = ({
     if (cubeID) localStorage.setItem(`inline-tag-emojis-${cubeID}`, (!showInlineTagEmojis).toString());
     setShowInlineTagEmojis((prev) => !prev);
   }, [cubeID, showInlineTagEmojis]);
+
+  const [showTagQuickFilters, setShowTagQuickFilters] = useLocalStorage<boolean>(`${cubeID}-showTagQuickFilters`, true);
+  const toggleShowTagQuickFilters = useCallback(() => {
+    setShowTagQuickFilters((prev) => !prev);
+  }, [setShowTagQuickFilters]);
 
   const toggleShowDeckBuilderStatsPanel = useCallback(() => {
     localStorage.setItem('show-deckbuilder-stats', (!showDeckBuilderStatsPanel).toString());
@@ -225,6 +254,8 @@ export const DisplayContextProvider: React.FC<DisplayContextProviderProps> = ({
     toggleShowMaybeboard,
     showInlineTagEmojis,
     toggleShowInlineTagEmojis,
+    showTagQuickFilters,
+    toggleShowTagQuickFilters,
     openCollapse,
     setOpenCollapse,
     cardsPerRow,

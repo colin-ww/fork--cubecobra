@@ -2,7 +2,7 @@ import React, { useContext, useMemo, useState } from 'react';
 
 import { cardImageUrl } from '@utils/cardutil';
 import Card from '@utils/datatypes/Card';
-import { getViewByName } from '@utils/datatypes/Cube';
+import { findViewBySlug } from '@utils/datatypes/Cube';
 import { sortForDownload } from '@utils/sorting/Sort';
 import { jsPDF } from 'jspdf';
 
@@ -40,7 +40,7 @@ const PrintAndPlayExportModal: React.FC<PrintAndPlayExportModalProps> = ({
 
   // Derive boards to export
   const currentViewBoards = useMemo(() => {
-    const view = getViewByName(cube, activeView);
+    const view = findViewBySlug(cube, activeView);
     return view?.boards.map((b) => b.toLowerCase()) || ['mainboard'];
   }, [cube, activeView]);
 
@@ -183,6 +183,9 @@ const PrintAndPlayExportModal: React.FC<PrintAndPlayExportModalProps> = ({
         `function done(){if(--pending<=0){window.focus();window.print();}}` +
         `if(!pending){window.focus();window.print();return;}` +
         `imgs.forEach(function(img){if(img.complete){done();}else{img.addEventListener('load',done);` +
+        // The backslash keeps a literal closing script tag out of the generated
+        // document's parser, so it is not redundant here.
+        // eslint-disable-next-line no-useless-escape
         `img.addEventListener('error',done);}});})();<\/script>` +
         `</body></html>`,
     );
